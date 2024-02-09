@@ -22,11 +22,9 @@ async def get_media_session():
         session = sessions.get_current_session()
         return session
     except OSError as e:
-        if e.winerror == -2147023170:
-            return None
-        else:
-            print("gah damn")
-            return None
+        if e.winerror != -2147023170:
+            print(e)
+        return None
 
 
 def media_state():
@@ -74,7 +72,7 @@ def handle_input():
 def update():
     outputMIDI.send(mido.Message('note_on', note=116, velocity=colors[media_state()]))
     vol = volume()
-    col1, col2, col3, col4, col5 = 2, 2, 2, 2, 2
+    col1, col2, col3, col4, col5 = 2, 2, 2, 1, 1
     if vol > 0:
         col1 = 127
     if vol < 100:
@@ -98,7 +96,6 @@ outputMIDI = mido.open_output("Launchpad Mini 1")  # change if you want to use o
 inputMIDI = mido.open_input("Launchpad Mini 0")
 inputThread = threading.Thread(target=handle_input)
 inputThread.start()
-print(get_mute())
 try:
     while True:
         update()
