@@ -5,6 +5,7 @@ import keyboard
 import asyncio
 import winsdk.windows.media.control as wmc
 import threading
+import time
 
 volCurves = [0, 15, 30, 45, 60, 75, 90, 100]  # volumes for 'slider' in percent
 colors = [2, 2, 127, 2, 120, 127]             # 2 => red 127 => yellow/orange 120 => green (lp mini mk2)
@@ -19,8 +20,7 @@ bindings = {115: "previous track",
 async def get_media_session():
     try:
         sessions = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
-        session = sessions.get_current_session()
-        return session
+        return sessions
     except OSError as e:
         if e.winerror != -2147023170:
             print(e)
@@ -28,21 +28,21 @@ async def get_media_session():
 
 
 def media_state():
-    session = asyncio.run(get_media_session())
+    global session
     if session is None:
         return False
     return session.get_playback_info().playback_status
 
 
 def previous_available():
-    session = asyncio.run(get_media_session())
+    global session
     if session is None:
         return False
     return session.get_playback_info().controls.is_previous_enabled
 
 
 def next_available():
-    session = asyncio.run(get_media_session())
+    global session
     if session is None:
         return False
     return session.get_playback_info().controls.is_next_enabled
@@ -90,6 +90,15 @@ def update():
     outputMIDI.send(mido.Message('note_on', note=117, velocity=col5))
 
 
+def refresh_session(_a, _b):
+    global session
+    session = sessions.get_current_session()
+
+
+sessions = asyncio.run(get_media_session())
+session = None
+sessions.add_current_session_changed(refresh_session)
+refresh_session(None, None)
 devices = AudioUtilities.GetSpeakers()
 interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
 outputMIDI = mido.open_output("Launchpad Mini 1")  # change if you want to use other devices
@@ -98,7 +107,9 @@ inputThread = threading.Thread(target=handle_input)
 inputThread.start()
 try:
     while True:
-        update()
+        if session is not None:
+            update()
+        time.sleep(1)
 except KeyboardInterrupt:
     for i in range(115, 121):
         outputMIDI.send(mido.Message('note_off', note=i, velocity=127))
