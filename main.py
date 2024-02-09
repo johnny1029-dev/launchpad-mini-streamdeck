@@ -6,7 +6,14 @@ import asyncio
 import winsdk.windows.media.control as wmc
 import threading
 
-colors = [2, 2, 127, 2, 120, 127]   # 2 => red 127 => yellow/orange 120 => green (lp mini mk2)
+volCurves = [0, 15, 30, 45, 60, 75, 90, 100]  # volumes for 'slider' in percent
+colors = [2, 2, 127, 2, 120, 127]             # 2 => red 127 => yellow/orange 120 => green (lp mini mk2)
+bindings = {115: "previous track",
+            116: "play/pause",
+            117: "next track",
+            118: "volume down",
+            119: "volume up",
+            120: "volume mute"}
 
 
 async def get_media_session():
@@ -16,46 +23,36 @@ async def get_media_session():
         return session
     except OSError as e:
         if e.winerror == -2147023170:
-            return 0
+            return None
         else:
             print("gah damn")
-            return 0
+            return None
 
 
 def media_state():
     session = asyncio.run(get_media_session())
     if session is None:
         return False
-    try:
-        return session.get_playback_info().playback_status
-    except AttributeError:
-        return 0
+    return session.get_playback_info().playback_status
 
 
 def previous_available():
     session = asyncio.run(get_media_session())
     if session is None:
         return False
-    try:
-        return session.get_playback_info().controls.is_previous_enabled
-    except AttributeError:
-        return False
+    return session.get_playback_info().controls.is_previous_enabled
 
 
 def next_available():
     session = asyncio.run(get_media_session())
     if session is None:
         return False
-    try:
-        return session.get_playback_info().controls.is_next_enabled
-    except AttributeError:
-        return False
+    return session.get_playback_info().controls.is_next_enabled
 
 
 def volume():
     global interface
-    volume = interface.QueryInterface(IAudioEndpointVolume)
-    return round(volume.GetMasterVolumeLevelScalar() * 100)
+    return round(interface.QueryInterface(IAudioEndpointVolume).GetMasterVolumeLevelScalar() * 100)
 
 
 def get_mute():
@@ -69,18 +66,9 @@ def check_key(message, key):
 
 def handle_input():
     for message in inputMIDI:
-        if check_key(message, 116):
-            keyboard.press_and_release('play/pause')
-        if check_key(message, 118):
-            keyboard.press_and_release('volume down')
-        if check_key(message, 119):
-            keyboard.press_and_release('volume up')
-        if check_key(message, 120):
-            keyboard.press_and_release('volume mute')
-        if check_key(message, 115):
-            keyboard.press_and_release('previous track')
-        if check_key(message, 117):
-            keyboard.press_and_release('next track')
+        for i in range(115, 121):
+            if check_key(message, i):
+                keyboard.press_and_release(bindings[i])
 
 
 def update():
@@ -106,7 +94,7 @@ def update():
 
 devices = AudioUtilities.GetSpeakers()
 interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-outputMIDI = mido.open_output("Launchpad Mini 1") # change if you want to use other devices
+outputMIDI = mido.open_output("Launchpad Mini 1")  # change if you want to use other devices
 inputMIDI = mido.open_input("Launchpad Mini 0")
 inputThread = threading.Thread(target=handle_input)
 inputThread.start()
@@ -115,12 +103,8 @@ try:
     while True:
         update()
 except KeyboardInterrupt:
-    outputMIDI.send(mido.Message('note_off', note=116, velocity=127))
-    outputMIDI.send(mido.Message('note_off', note=118, velocity=127))
-    outputMIDI.send(mido.Message('note_off', note=119, velocity=127))
-    outputMIDI.send(mido.Message('note_off', note=120, velocity=127))
-    outputMIDI.send(mido.Message('note_off', note=115, velocity=127))
-    outputMIDI.send(mido.Message('note_off', note=117, velocity=127))
+    for i in range(115, 121):
+        outputMIDI.send(mido.Message('note_off', note=i, velocity=127))
     inputThread.join(0)
     inputMIDI.close()
     interface.Release()
