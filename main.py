@@ -1,9 +1,9 @@
 import mido
 from comtypes import CLSCTX_ALL
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+import winsdk.windows.media.control as wmc
 import keyboard
 import asyncio
-import winsdk.windows.media.control as wmc
 import threading
 import time
 
@@ -18,76 +18,8 @@ bindings = {115: "previous track",
 
 
 async def get_media_session():
-    try:
-        sessions = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
-        return sessions
-    except OSError as e:
-        if e.winerror != -2147023170:
-            print(e)
-        return None
-
-
-def media_state():
-    global session
-    if session is None:
-        return False
-    return session.get_playback_info().playback_status
-
-
-def previous_available():
-    global session
-    if session is None:
-        return False
-    return session.get_playback_info().controls.is_previous_enabled
-
-
-def next_available():
-    global session
-    if session is None:
-        return False
-    return session.get_playback_info().controls.is_next_enabled
-
-
-def volume():
-    global interface
-    return round(interface.QueryInterface(IAudioEndpointVolume).GetMasterVolumeLevelScalar() * 100)
-
-
-def get_mute():
-    global interface
-    return interface.QueryInterface(IAudioEndpointVolume).GetMute()
-
-
-def check_key(message, key):
-    return message.note == key and message.velocity == 127
-
-
-def handle_input():
-    for message in inputMIDI:
-        for i in range(115, 121):
-            if check_key(message, i):
-                keyboard.press_and_release(bindings[i])
-
-
-def update():
-    outputMIDI.send(mido.Message('note_on', note=116, velocity=colors[media_state()]))
-    vol = volume()
-    col1, col2, col3, col4, col5 = 2, 2, 2, 1, 1
-    if vol > 0:
-        col1 = 127
-    if vol < 100:
-        col2 = 127
-    if get_mute() == 0:
-        col3 = 120
-    if previous_available():
-        col4 = 120
-    if next_available():
-        col5 = 120
-    outputMIDI.send(mido.Message('note_on', note=118, velocity=col1))
-    outputMIDI.send(mido.Message('note_on', note=119, velocity=col2))
-    outputMIDI.send(mido.Message('note_on', note=120, velocity=col3))
-    outputMIDI.send(mido.Message('note_on', note=115, velocity=col4))
-    outputMIDI.send(mido.Message('note_on', note=117, velocity=col5))
+    s = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
+    return s
 
 
 def refresh_session(_a, _b):
@@ -95,21 +27,76 @@ def refresh_session(_a, _b):
     session = sessions.get_current_session()
 
 
+def handle_input():
+    for message in inputMIDI:
+        for i in range(115, 121):
+            if message.note == i and message.velocity == 127:
+                keyboard.press_and_release(bindings[i])
+
+
+def update():
+    pi = session.get_playback_info()
+    outputMIDI.send(mido.Message('note_on', note=116, velocity=colors[pi.playback_status]))
+    vol = round(interface.GetMasterVolumeLevelScalar() * 100)
+    col1, col2, col3, col4, col5 = 2, 2, 2, 1, 1
+
+    if vol > 0:
+        col1 = 127
+    if vol < 100:
+        col2 = 127
+    if interface.GetMute() == 0:
+        col3 = 120
+    if pi.controls.is_previous_enabled:
+        col4 = 120
+    if pi.controls.is_next_enabled:
+        col5 = 120
+
+    outputMIDI.send(mido.Message('note_on', note=118, velocity=col1))
+    outputMIDI.send(mido.Message('note_on', note=119, velocity=col2))
+    outputMIDI.send(mido.Message('note_on', note=120, velocity=col3))
+    outputMIDI.send(mido.Message('note_on', note=115, velocity=col4))
+    outputMIDI.send(mido.Message('note_on', note=117, velocity=col5))
+
+
+if __name__ != "__main__":
+    exit()
+
+outputMIDI = mido.open_output("Launchpad Mini 1")  # change if you want to use other devices
+inputMIDI = mido.open_input("Launchpad Mini 0")
+
 sessions = asyncio.run(get_media_session())
 session = None
 sessions.add_current_session_changed(refresh_session)
 refresh_session(None, None)
 devices = AudioUtilities.GetSpeakers()
-interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-outputMIDI = mido.open_output("Launchpad Mini 1")  # change if you want to use other devices
-inputMIDI = mido.open_input("Launchpad Mini 0")
+interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None).QueryInterface(IAudioEndpointVolume)
+
 inputThread = threading.Thread(target=handle_input)
 inputThread.start()
+
 try:
     while True:
         if session is not None:
             update()
-        time.sleep(1)
+        else:
+            outputMIDI.send(mido.Message('note_on', note=115, velocity=1))
+            outputMIDI.send(mido.Message('note_on', note=116, velocity=1))
+            outputMIDI.send(mido.Message('note_on', note=117, velocity=1))
+            vol = round(interface.GetMasterVolumeLevelScalar() * 100)
+            col1, col2, col3 = 2, 2, 2
+
+            if vol > 0:
+                col1 = 127
+            if vol < 100:
+                col2 = 127
+            if interface.GetMute() == 0:
+                col3 = 120
+
+            outputMIDI.send(mido.Message('note_on', note=118, velocity=col1))
+            outputMIDI.send(mido.Message('note_on', note=119, velocity=col2))
+            outputMIDI.send(mido.Message('note_on', note=120, velocity=col3))
+
+        time.sleep(0.5)
 except KeyboardInterrupt:
     for i in range(115, 121):
         outputMIDI.send(mido.Message('note_off', note=i, velocity=127))
