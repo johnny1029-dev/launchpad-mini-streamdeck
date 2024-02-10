@@ -6,6 +6,8 @@ import keyboard
 import asyncio
 import threading
 import time
+import numpy as np
+import sounddevice as sd
 
 dimRed = 1
 brightRed = 2
@@ -28,10 +30,16 @@ colorPalette = {"playing": brightGreen,
                 "skipAvailable": dimGreen,
                 "muted": brightRed,
                 "unMuted": dimGreen,
-                "playerUnavailable": dimRed}  # custom color palette; the names are pretty self-explanatory
+                "playerUnavailable": dimRed,
+                "visualizerNormalMode": dimGreen,
+                "visualizerMusicMode": brightGreen}  # custom color palette; the names are pretty self-explanatory
 
 volControl = False
 unlocked = True
+visualizerCurves = [1, 30, 45, 55, 65, 70, 75, 80]
+visualizerCurvesMusic = [1, 30, 55, 68, 71, 74, 76, 79]
+visualizerColorCurves = [dimGreen, dimGreen, brightGreen, brightGreen, brightGreen, yellow, orange, brightRed]
+musicMode = False
 volCurves = [0, 10, 20, 30, 50, 60, 85, 100]  # volumes for 'slider' in percent
 colors = [2, 2, 127, 2, 120, 127]  # 2 => red 127 => yellow/orange 120 => green (lp mini mk2)
 bindings = {115: "previous track",
@@ -53,7 +61,7 @@ def refresh_session(_a, _b):
 
 
 def handle_input():
-    global volControl, unlocked
+    global volControl, unlocked, musicMode
 
     for message in inputMIDI:
         if unlocked:
@@ -74,6 +82,13 @@ def handle_input():
                     continue
                 volControl = True
                 outputMIDI.send(mido.Message('control_change', control=104, value=colorPalette["unlockedSlider"]))
+            if message.type == "control_change" and message.control == 105 and message.value == 127:
+                if musicMode:
+                    musicMode = False
+                    outputMIDI.send(mido.Message('control_change', control=105, value=colorPalette["visualizerNormalMode"]))
+                    continue
+                musicMode = True
+                outputMIDI.send(mido.Message('control_change', control=105, value=colorPalette["visualizerMusicMode"]))
         if message.type == "control_change" and message.control == 111 and message.value == 127:
             if unlocked:
                 unlocked = False
@@ -116,6 +131,35 @@ def volume_slider():
             outputMIDI.send(mido.Message('note_off', note=112 - (16 * i), velocity=127))
 
 
+def volume_visualizer(indata, _frames, _time, _status):
+    global vol
+    if vol == 0:
+        return 0
+    if vol > 10:
+        currVolume = (np.sqrt(np.mean(indata ** 2)) / ((vol - 10) * 2)) * 100000  # dark magic
+    else:
+        currVolume = (np.sqrt(np.mean(indata ** 2)) / vol) * 200000  # darker magic
+    maxLv = 0
+    if musicMode:
+        for i in range(0, 8):
+            if currVolume > visualizerCurvesMusic[i]:
+                maxLv = i
+        color = visualizerColorCurves[maxLv]
+        for i in range(0, maxLv + 1):
+            outputMIDI.send(mido.Message('note_on', note=113 - (16 * i), velocity=color))
+        for i in range(maxLv, 8):
+            outputMIDI.send(mido.Message('note_off', note=113 - (16 * i), velocity=127))
+        return
+    for i in range(0, 8):
+        if currVolume > visualizerCurves[i]:
+            maxLv = i
+    color = visualizerColorCurves[maxLv]
+    for i in range(0, maxLv + 1):
+        outputMIDI.send(mido.Message('note_on', note=113 - (16 * i), velocity=color))
+    for i in range(maxLv, 8):
+        outputMIDI.send(mido.Message('note_off', note=113 - (16 * i), velocity=127))
+
+
 if __name__ != "__main__":
     exit()
 
@@ -123,6 +167,7 @@ outputMIDI = mido.open_output("Launchpad Mini 1")  # change if you want to use o
 inputMIDI = mido.open_input("Launchpad Mini 0")
 
 outputMIDI.send(mido.Message('control_change', control=104, value=colorPalette["lockedSlider"]))
+outputMIDI.send(mido.Message('control_change', control=105, value=colorPalette["visualizerNormalMode"]))
 outputMIDI.send(mido.Message('control_change', control=111, value=colorPalette["unlockedMain"]))
 
 sessions = asyncio.run(get_media_session())
@@ -131,9 +176,13 @@ sessions.add_current_session_changed(refresh_session)
 refresh_session(None, None)
 devices = AudioUtilities.GetSpeakers()
 interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None).QueryInterface(IAudioEndpointVolume)
+vol = 0
 
 inputThread = threading.Thread(target=handle_input)
 inputThread.start()
+stream = sd.InputStream(callback=volume_visualizer, device=3)
+stream.start()
+
 
 try:
     while True:
@@ -160,11 +209,13 @@ try:
 
         time.sleep(0.2)
 except KeyboardInterrupt:
+    inputThread.join(0)
+    stream.stop()
     for i in range(0, 121):
         outputMIDI.send(mido.Message('note_off', note=i, velocity=127))
     outputMIDI.send(mido.Message('control_change', control=104, value=0))
+    outputMIDI.send(mido.Message('control_change', control=105, value=0))
     outputMIDI.send(mido.Message('control_change', control=111, value=0))
-    inputThread.join(0)
     inputMIDI.close()
     outputMIDI.close()
     interface.Release()
