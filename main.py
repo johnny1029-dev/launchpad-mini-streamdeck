@@ -32,7 +32,7 @@ colorPalette = {"playing": brightGreen,
 
 volControl = False
 unlocked = True
-volCurves = [0, 10, 20, 30, 40, 50, 65, 80, 100]  # volumes for 'slider' in percent
+volCurves = [0, 10, 20, 30, 50, 60, 85, 100]  # volumes for 'slider' in percent
 colors = [2, 2, 127, 2, 120, 127]  # 2 => red 127 => yellow/orange 120 => green (lp mini mk2)
 bindings = {115: "previous track",
             116: "play/pause",
@@ -61,9 +61,9 @@ def handle_input():
                 if message.velocity != 127:
                     continue
                 for i in range(115, 121):
-                    if message.note < 9:
+                    if message.note in [112, 96, 80, 64, 48, 32, 16, 0]:
                         if volControl:
-                            interface.SetMasterVolumeLevelScalar(float(volCurves[message.note]) / 100.0, None)
+                            interface.SetMasterVolumeLevelScalar(float(volCurves[int((112 - message.note) / 16)]) / 100.0, None)
                         continue
                     if message.note == i:
                         keyboard.press_and_release(bindings[i])
@@ -109,11 +109,11 @@ def update():
 
 def volume_slider():
     global vol
-    for i in range(0, 9):
+    for i in range(0, 8):
         if vol >= volCurves[i]:
-            outputMIDI.send(mido.Message('note_on', note=i, velocity=colorPalette["volSlider"]))
+            outputMIDI.send(mido.Message('note_on', note=112 - (16 * i), velocity=colorPalette["volSlider"]))
         else:
-            outputMIDI.send(mido.Message('note_off', note=i, velocity=127))
+            outputMIDI.send(mido.Message('note_off', note=112 - (16 * i), velocity=127))
 
 
 if __name__ != "__main__":
