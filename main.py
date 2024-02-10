@@ -36,9 +36,9 @@ colorPalette = {"playing": brightGreen,
 
 volControl = False
 unlocked = True
-visualizerCurves = [1, 30, 45, 55, 65, 70, 75, 80]
-visualizerCurvesMusic = [1, 30, 55, 68, 71, 74, 76, 79]
-visualizerColorCurves = [dimGreen, dimGreen, brightGreen, brightGreen, brightGreen, yellow, orange, brightRed]
+visualizerCurves = [0, 5, 20, 30, 40, 55, 65, 70, 78]
+visualizerCurvesMusic = [0, 20, 35, 40, 45, 50, 60, 70, 78]
+visualizerColorCurves = [dimGreen, dimGreen, brightGreen, brightGreen, brightGreen, brightGreen, yellow, orange, brightRed]
 musicMode = False
 volCurves = [0, 10, 20, 30, 50, 60, 85, 100]  # volumes for 'slider' in percent
 colors = [2, 2, 127, 2, 120, 127]  # 2 => red 127 => yellow/orange 120 => green (lp mini mk2)
@@ -141,20 +141,20 @@ def volume_visualizer(indata, _frames, _time, _status):
         currVolume = (np.sqrt(np.mean(indata ** 2)) / vol) * 200000  # darker magic
     maxLv = 0
     if musicMode:
-        for i in range(0, 8):
+        for i in range(0, 9):
             if currVolume > visualizerCurvesMusic[i]:
                 maxLv = i
         color = visualizerColorCurves[maxLv]
-        for i in range(0, maxLv + 1):
+        for i in range(0, maxLv):
             outputMIDI.send(mido.Message('note_on', note=113 - (16 * i), velocity=color))
         for i in range(maxLv, 8):
             outputMIDI.send(mido.Message('note_off', note=113 - (16 * i), velocity=127))
         return
-    for i in range(0, 8):
+    for i in range(0, 9):
         if currVolume > visualizerCurves[i]:
             maxLv = i
     color = visualizerColorCurves[maxLv]
-    for i in range(0, maxLv + 1):
+    for i in range(0, maxLv):
         outputMIDI.send(mido.Message('note_on', note=113 - (16 * i), velocity=color))
     for i in range(maxLv, 8):
         outputMIDI.send(mido.Message('note_off', note=113 - (16 * i), velocity=127))
